@@ -8,9 +8,9 @@
 		<!-- Metadata -->
 	<meta name="description" content="My ramblings and notes on binary analysis and general software security">
 	<meta property="og:description" content="My ramblings and notes on binary analysis and general software security">
-	<meta property="og:title" content="Position-Independent Code (PIC)" />
+	<meta property="og:title" content="Position-Independent Code (PIC) and ASLR" />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content="/position-independent-code-pic.html" />
+	<meta property="og:url" content="/position-independent-code-pic-and-aslr.html" />
 		<meta property="og:image" content="/images/" />
 
 		<!-- Enable responsiveness on mobile devices-->
@@ -58,7 +58,7 @@
     
 </div>		<div class="content container">
 <div class="post">
-	<h1 class="post-title">Position-Independent Code (PIC)</h1>
+	<h1 class="post-title">Position-Independent Code (PIC) and ASLR</h1>
 	<span class="post-date">Sat 02 May 2020</span>
 	<p>Position-independent code (PIC) is code that can be loaded at any address in memory, whereas non-PIC code (absolute code) must be loaded at a specific location in memory to function properly. When a program includes a shared library, the code for that library must be loaded into the memory space of that program. PIC allows shared libraries included by a program to be loaded at any address in its memory space, which is important because every program will have a different combination of libraries that must be loaded into its memory space.  </p>
 <p>Modern versions of GCC produce PIC by default (for x86_64 at least). As an example, take the following snippet of code:</p>
@@ -171,7 +171,7 @@
 </code></pre></div>
 
 
-<p>The address of main and the stack is different with each run. ASLR can be disable as follows:</p>
+<p>The address of main and the stack is different with each run. ASLR can be disabled as follows:</p>
 <div class="highlight"><pre><span></span><code><span class="gp">$</span> <span class="nb">echo</span> <span class="m">0</span> <span class="p">|</span> sudo tee /proc/sys/kernel/randomize_va_space
 </code></pre></div>
 
@@ -189,7 +189,7 @@
 
 <p>The stack and executable code get loaded at the same address for each run.</p>
 <p>Re-enable ASLR as follows:</p>
-<div class="highlight"><pre><span></span><code><span class="go">echo 2 | sudo tee /proc/sys/kernel/randomize_va_space</span>
+<div class="highlight"><pre><span></span><code><span class="gp">$</span> <span class="nb">echo</span> <span class="m">2</span> <span class="p">|</span> sudo tee /proc/sys/kernel/randomize_va_space
 </code></pre></div>
 </div>
 		</div>
