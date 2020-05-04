@@ -26,10 +26,8 @@ LINKS = (('Pelican', 'http://getpelican.com/'),
          ('You can modify those links in your config file', '#'),)
 
 # Social widget
-SOCIAL = (('github', 'https://github.com/jar3dp'),)
+SOCIAL = (('github', 'https://github.com/cyber-tuna'),)
        
-GITHUB = 'https://github.com/cyber-tuna'
-
 DEFAULT_PAGINATION = 10
 
 # Uncomment following line if you want document-relative URLs when developing
