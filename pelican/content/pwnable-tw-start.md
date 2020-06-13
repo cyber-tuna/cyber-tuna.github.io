@@ -1,10 +1,10 @@
-Title: Pwnable.tw challenge 1 - Start 
+Title: Pwnable.tw Challenge 1 - Start 
 Date: 2020-5-19 2:30 PM 
 Category: CTF 
 
 The first challenge from pwnable.tw, as the name of the site suggests, is a pwnable CTF challenge. The goal of the challenge is to pop a shell in the remote service and read out the flag, which we've been instructed should reside at '/home/start/flag'. The binary running on the remote server is provided for offline analysis and testing. 
 
-As usual, the first step is to 'file' the binary:
+As usual, the first step is to run `file` on the binary:
 
 ```
 :::console
@@ -12,7 +12,7 @@ $ file start
 start: ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), statically linked, not stripped
 ```
 
-Note that the binary is 32-bit and was not compiled with -fPIC. This is good news, as it means the binary will get loaded at the same address in memory for each run. Next let's disassemble:
+Note that the binary is 32-bit and was not compiled with -fPIC. This is good news, as it means the binary will get loaded at the same address in memory each time it is executed. Next let's disassemble:
 
 ```
 :::objdump-nasm
@@ -54,7 +54,7 @@ Disassembly of section .text:
  80480a1:	cd 80                	int    0x80
 ```
 
-Notice the 'int 0x80' instructions - these are "interupt" instructions that will cause any of the 256 entries in the IA32 exception table to run. In this case, "int 0x80" causes the exception handler 0x80 to run, which is responsible for handling system calls. Each system call made avalabile by the kernel has a corresponding number. The system call table on my machine is located at /usr/include/asm/unistd_32.h:
+Notice the `int 0x80` instructions - these are "interrupt" instructions that will cause any of the 256 entries in the IA32 exception table to run. In this case, "int 0x80" causes the exception handler 0x80 to be executed, which is responsible for handling system calls. Each system call made available by the kernel has a corresponding number. The system call table on my machine is located at /usr/include/asm/unistd_32.h:
 
 ```
 :::c
@@ -68,7 +68,7 @@ ifndef _ASM_X86_UNISTD_32_H
 #define __NR_write 4
 #define __NR_open 5
 ```
-A program controls which system call to execute by placing the system call number in register eax. Our target binary places the value 0x4 into register 'al' - the lower 8 bits of eax - just prior to the `int 0x80` instruction. Consulting the table above, we see that this corresponds to the 'write' system call. From the man pages, we see:
+To choose which system call the `int 0x80` instruction will run, the system call number is placed in register eax. Our target binary places the value '0x4' into register 'al' - the lower 8 bits of eax - just prior to the `int 0x80` instruction. Consulting the table above, we see that this corresponds to the 'write' system call. From the man pages, we see:
 
 ```
 :::console
@@ -103,10 +103,10 @@ Next, we'll investigate the second syscall, which appears to be a 'read' syscall
 
 ```
 :::c
-read(0, sp, 0x3c)
+read(0, sp, 0x3c);
 ```
 
-We can take this to mean that 60 bytes will be read from standard input (our terminal in this case) and placed in at the address pointed to by the esp (stack pointer) register. Sounds like a perfect candidate for a stack-smash. First we'll need to see if the binary was compiled to utilize stack canaries and if NX is enabled. I like to use the GEF gdb plugin, which makes this task trivial:
+We can take this to mean that 60 bytes will be read from standard input (our terminal in this case) and placed in at the address pointed to by the esp (stack pointer) register. Looks like a perfect candidate for a stack-smash. First we'll need to see if the binary was compiled to utilize stack canaries and if NX is enabled. I like to use the GEF gdb plugin, which makes this a trivial task:
 
 ```
 $ gdb
@@ -120,7 +120,7 @@ Fortify                       : ✘
 RelRO                         : ✘
 ```
 
-Good news! Stack canaries are not employed in this binary, nor is NX, meaning the stack is executable. In theory, this means that we should be able to overwrite the retrun address of the current stack frame with the address of our shellcode, which can also be included in our input string to the program. The first task is to determine at what offset into our input string will overwrite the return address. We could calculate this manually, but it's easier to use the handy 'pattern generator' functionality of GEF as follows:
+Good news! Stack canaries are not employed in this binary, making a stack-smash much easier. Nor is NX enabled, meaning the stack is executable. In theory, this means that we should be able to overwrite the return address of the current stack frame with the address of our shellcode, which can also be included in our input string to the program. The first task is to determine at what offset into our input string will overwrite the return address. We could calculate this manually, but it's easier to use the handy 'pattern generator' functionality of GEF as follows:
 
 ```
 :::console
@@ -171,9 +171,9 @@ gef➤  pattern search $eip
 [+] Found at offset 17 (big-endian search)
 ```
 
-What this does is generates a handy 'pattern' string that is used as input to the program. The program will eventually crash when one of those values in the pattern string will get loaded into the PC. The `pattern search $eip` command searches the previously generated pattern for the value contained in $eip, and reports the offset, which in this case is 20. This means that the word stored at offset 20 in our exploit string will overwrite the return address, and will ultimately get loaded into eip. 
+This generates a handy 'pattern' string that is used as input to the program. The program will eventually crash when one of those values in the pattern string will get loaded into the PC. The `pattern search $eip` command searches the previously generated pattern for the value contained in eip, and reports the offset, which in this case is 20. This means that the word stored at offset 20 in our exploit string will overwrite the return address, and will ultimately get loaded into eip. 
 
-Now, this will be a simple and straightforward exploit if ASLR is disabled on the target system. Let's start by writing a pwntools script that will exploit our target binary with ASLR disabled. I used the "Tiny Execve sh" shellcode from http://shell-storm.org/shellcode/files/shellcode-841.php and placed it in our exploit string following the word that overwrites the return address. Using gdb, I determined that the address of the shell code is 0xffffd40c. The entire pwntools script follows:
+Now, this will be a simple and straightforward exploit if ASLR is disabled on the target system. Let's start by writing a pwntools script that will exploit our target binary with ASLR disabled. I used the 'Tiny Execve sh" shellcode from 'http://shell-storm.org/shellcode/files/shellcode-841.php' and placed it in our exploit string following the word that overwrites the return address. Using gdb, I determined that the address of the shell code is 0xffffd40c. The entire pwntools script follows:
 
 ```
 :::python3
@@ -203,7 +203,7 @@ Linux ubuntu 5.3.0-51-generic #44~18.04.2-Ubuntu SMP Thu Apr 23 14:27:18 UTC 202
 $  
 ```
 
-Nice! We have succesfully pwned the binary without ASLR. Let's disable ASLR (by chaging the aslr argument to the process object):
+Nice! We have successfully pwned the binary without ASLR. Let's disable ASLR (by changing the ASLR argument to the process object):
 ```
 :::console
 $ python3 start.py 
@@ -215,7 +215,7 @@ $ ls
 [*] Got EOF while sending in interactive
 ```
 
-As expected, when ASLR is enabled, our absolute address for the shellcode is no good... Let's test our exploit against the live application. To do this, we just need to change one line of code: `p = process('./start', aslr=True)` to `p = remote('chall.pwnable.tw', 10000)`. This causes the exploit to connect to the pwnable.tw challenge server instead of our local binary. 
+As expected, when ASLR is enabled, our absolute address for the shellcode is no good... Let's test our exploit against the live application. To do this, we just need to change one line of code: `p = process('./start', aslr=True)` to `p = remote('chall.pwnable.tw', 10000)`. This causes the script to connect to the pwnable.tw challenge server instead of our local binary. 
 
 ```
 :::console
@@ -230,9 +230,9 @@ $ ls
 
 No good.. ASLR seems to be enabled on the remote challenge server. In order to properly exploit this binary with ASLR, we'll need to somehow "leak" a stack address. We can then compute the offset between the leaked address and the start of our shellcode, which will remain constant regardless of where the stack is loaded into the process memory space - therefore providing a reliable method to compute the address of our shellcode.
 
-After poking around the binary a bit in Binary Ninja, I noticed a suspicious `push esp` instruction at the beginning of the main function. As "luck" would have it, the program only adds 0x14 to the stack in its cleanup postamble - just enough to clean up the 5 pushes for the output string, but not the stack pointer value pushed onto the stack at the start. Also lucky for us, the program moves esp into ecx (line 8048087) just prior to the write system call. For the write call, the string pointer value in ecx will be used for the buffer to be written to stdout. Therefore, if we use the buffer overflow from the read function (line 8048097) to redirect program control to line 8048087, we can force the program to leak a stack address. After the call to write, the program will continue to the vulnerable read function, which we'll exploit for a _second_ time, this time redirecting program control to our shellcode, which through a little experimentation in gdb, I discovered to be the leaked address + 20.
+After poking around the binary a bit in Binary Ninja, I noticed a suspicious `push esp` instruction at the beginning of the main function. As "luck" would have it, the program only adds 0x14 to the stack in its cleanup postamble - just enough to clean up the 5 pushes for the output string, but not the stack pointer value pushed onto the stack at the start. Also lucky for us, the program moves esp into ecx (address 8048087) just prior to the write system call. For the write call, the string pointer value in ecx will be used for the buffer to be written to stdout. Therefore, if we use the buffer overflow from the read function (address 8048097) to redirect program control to address 8048087, we can force the program to leak a stack address. After the call to write, the program will continue to the vulnerable read function, which we'll exploit for a _second_ time, this time redirecting program control to our shellcode, which through a little experimentation in gdb, I discovered to be the leaked address plus 20.
 
-The final pwntool sript is as follows:
+The final pwntools script is as follows:
 
 ```
 :::python3
@@ -286,3 +286,5 @@ usr
 var
 $
 ```
+
+Done! We now have a remote shell on the challenge server. 
