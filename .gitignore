@@ -1,1 +1,5 @@
 *.swp
+*.bak
+*.pyc
+pelican/content/output/*
+
