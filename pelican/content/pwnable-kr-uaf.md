@@ -166,7 +166,7 @@ Continuing.
 0x614eb0:	0x0000000000614e88	0x0000000000000031
 0x614ec0:	0x0000000000000004
 [7] gef➤  info symbol 0x0000000000401570
-vtable for Man + 16 in section .rodata of /home/jared/Documents/ctf/uaf/uaf
+vtable for Man + 16 in section .rodata of /home/dev/Documents/ctf/uaf/uaf
 [8] gef➤  x/s 0x0000000000614e88
 0x614e88:	"Jack"
 [9] gef➤  x/2a 0x0000000000401570
@@ -233,7 +233,7 @@ Let's make sure we can force this program to allocate memory at the address of t
 gef➤  b *0x00401025
 Breakpoint 4 at 0x401025
 gef➤  run e
-Starting program: /home/jared/Documents/ctf/uaf/uaf 24 e
+Starting program: /home/dev/Documents/ctf/uaf/uaf 24 e
 1. use
 2. after
 3. free
