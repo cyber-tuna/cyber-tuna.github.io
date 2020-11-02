@@ -191,7 +191,7 @@ vtable for Man + 16 in section .rodata of /home/dev/Documents/ctf/uaf/uaf
 
 [9] Finally, print out two pointers at object's vtable. We can see that the object has two member virtual functions: `give_shell()` and `introduce()`.
 
-In step [7], we located the `m` object's vpointer. I won't go into too much discussion about how C++ objects work at the binary level since there is already lots of good reading out there on the web, but suffice it to say that the addresses of virtual functions are stored in a table unique to that object type. This technique enables run-time polymorphism, where the compiler does not know the address of a virtual function call because it could be the base class implementation, or any of if its derived classes. Instead, addresses to virtual functions are looked up at runtime (known as run-time method binding). 
+In step [7], we located the `m` object's vpointer. I won't go into too much discussion about how C++ objects work at the binary level since there is already lots of good reading out there on the web, but suffice it to say that the addresses of virtual functions are stored in a table unique to that object type. This technique enables run-time polymorphism, where the compiler does not know the address of a virtual function call because it could be the base class implementation, or any of its derived classes. Instead, addresses to virtual functions are looked up at runtime (known as run-time method binding).
 
 At this point, we have discovered the binary representation of the m object. To visualize:
 
