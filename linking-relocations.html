@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en" prefix="og: http://ogp.me/ns#">
+	<head>
+		<link href="http://gmpg.org/xfn/11" rel="profile">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta http-equiv="content-type" content="text/html; charset=utf-8">
+
+		<!-- Metadata -->
+	<meta name="description" content="My ramblings and notes on binary analysis and general software security">
+	<meta property="og:description" content="My ramblings and notes on binary analysis and general software security">
+	<meta property="og:title" content="Linking - Relocations" />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content="/linking-relocations.html" />
+		<meta property="og:image" content="/images/" />
+
+		<!-- Enable responsiveness on mobile devices-->
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+
+		<title>cyber tuna</title>
+
+		<!-- CSS -->
+		<link href="//fonts.googleapis.com/" rel="dns-prefetch">
+		<link href="//fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic|Abril+Fatface|PT+Sans:400,400italic,700&amp;subset=latin,latin-ext" rel="stylesheet">
+
+		<link rel="stylesheet" href="/theme/css/poole.css" />
+		<link rel="stylesheet" href="/theme/css/hyde.css" />
+		<link rel="stylesheet" href="/theme/css/syntax.css" />
+		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+
+		<!-- RSS -->
+		<link rel="alternate" type="application/rss+xml" title="RSS" href="/atom.xml">
+	</head>
+
+	<body class="theme-base-0d">
+<div class="sidebar">
+	<div class="container sidebar-sticky">
+		<div class="sidebar-about">
+
+			<h1>
+				<a href="/">
+					<!-- <img class="profile-picture" src="/images/"> -->
+					cyber tuna
+				</a>
+			</h1>
+			<p class="lead"></p>
+			<p class="lead">My ramblings and notes on binary analysis and general software security </p>
+			<p></p>
+		</div>
+		<nav class="sidebar-nav">
+            <a class="sidebar-nav-item" href="/">Home</a>
+                <a class="sidebar-nav-item" href="/category/ctf.html"> CTF </a>
+                <a class="sidebar-nav-item" href="/category/notes.html"> Notes </a>
+					<a class="sidebar-nav-item" href="https://github.com/cyber-tuna">
+						<i class="fa fa-github"></i>
+                        GitHub
+					</a>
+		</nav>
+	</div>
+    
+</div>		<div class="content container">
+<div class="post">
+	<h1 class="post-title">Linking - Relocations</h1>
+	<span class="post-date">Sat 20 February 2021</span>
+	<p>In an effort to fill in some knowledge gaps regarding the linking process for the GNU compiler toolchain, I spent a few minutes exploring the ELF relocation section in a sample binary.</p>
+<p>From the ELF man pages, relocation is "the process of connecting symbolic references with symbolic definitions. Relocatable files must have information that describes how to modify their section contents, thus allowing executable and shared object files to hold the right information for a process's program image."</p>
+<p>We'll play around with the following code consisting of two separate source files to see how relocations work:</p>
+<div class="highlight"><pre><span></span><code><span class="c1">// main.c</span>
+<span class="cp">#include</span> <span class="cpf">&quot;hello.h&quot;</span><span class="cp"></span>
+<span class="cp">#include</span> <span class="cpf">&lt;stdio.h&gt;</span><span class="cp"></span>
+
+<span class="k">extern</span> <span class="kt">char</span> <span class="n">global_variable</span><span class="p">[];</span>
+
+<span class="kt">int</span> <span class="nf">main</span> <span class="p">()</span>
+<span class="p">{</span>
+  <span class="n">hello</span><span class="p">(</span><span class="s">&quot;world&quot;</span><span class="p">);</span>
+  <span class="n">printf</span><span class="p">(</span><span class="s">&quot;%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">global_variable</span><span class="p">);</span>
+  <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+
+
+<p>And the "hello" source and header:</p>
+<div class="highlight"><pre><span></span><code><span class="c1">// hello.h</span>
+<span class="kt">void</span> <span class="nf">hello</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">name</span><span class="p">);</span>
+</code></pre></div>
+
+
+<div class="highlight"><pre><span></span><code><span class="c1">// hello.c</span>
+<span class="cp">#include</span> <span class="cpf">&lt;stdio.h&gt;</span><span class="cp"></span>
+<span class="cp">#include</span> <span class="cpf">&quot;hello.h&quot;</span><span class="cp"></span>
+
+<span class="kt">char</span> <span class="n">global_variable</span><span class="p">[]</span> <span class="o">=</span> <span class="s">&quot;global var&quot;</span><span class="p">;</span>
+
+<span class="kt">void</span> <span class="nf">hello</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">name</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">printf</span><span class="p">(</span><span class="s">&quot;Hello, %s!</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+
+<p>Compile the program with the <code>--save-temps</code> option; this tells GCC to not delete intermediate files (*.s, *.i, *.o):</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$</span> gcc main.c hello.c -o hello --save-temps
+</code></pre></div>
+
+
+<p>Next we'll disassembly the "main.o" object file using objdump:</p>
+<div class="highlight"><pre><span></span><code><span class="x">$ objdump -M intel -d main.o</span>
+
+<span class="nl">main.o</span><span class="p">:</span>     file format <span class="s">elf64-x86-64</span>
+
+
+Disassembly of section <span class="nl">.text</span><span class="p">:</span>
+
+<span class="mh">0000000000000000</span> <span class="p">&lt;</span><span class="nf">main</span><span class="p">&gt;:</span>
+<span class="x">   0:   55                      push   rbp</span>
+<span class="x">   1:   48 89 e5                mov    rbp,rsp</span>
+<span class="x">   4:   48 8d 3d 00 00 00 00    lea    rdi,[rip+0x0]        # b &lt;main+0xb&gt;</span>
+<span class="x">   b:   e8 00 00 00 00          call   10 &lt;main+0x10&gt;</span>
+<span class="x">  10:   48 8d 3d 00 00 00 00    lea    rdi,[rip+0x0]        # 17 &lt;main+0x17&gt;</span>
+<span class="x">  17:   e8 00 00 00 00          call   1c &lt;main+0x1c&gt;</span>
+<span class="x">  1c:   b8 00 00 00 00          mov    eax,0x0</span>
+<span class="x">  21:   5d                      pop    rbp</span>
+<span class="x">  22:   c3                      ret    </span>
+</code></pre></div>
+
+
+<p>Notice the call instruction at address 0xb - this is the "hello()" function call. The previous instruction sets up the first (and only) argument by placing an address into register rdi. The interesting bit here is that both the register load and call instruction use PC relative addressing with an offset of 0x0. This is because the object files have not been merged yet and the address at which the call target will be loaded is not yet known. The assembler generates relocation entries (stored in the .rel.text and .rel.data ELF sections) for each of these references to external code or data for which the final address is unknown.</p>
+<p>To view these relocation entries, we can utilize the readelf tool with the -r option.</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$</span> readelf -r main.o
+
+<span class="go">Relocation section &#39;.rela.text&#39; at offset 0x260 contains 4 entries:</span>
+<span class="go">  Offset          Info           Type           Sym. Value    Sym. Name + Addend</span>
+<span class="go">000000000007  000500000002 R_X86_64_PC32     0000000000000000 .rodata - 4</span>
+<span class="go">00000000000c  000b00000004 R_X86_64_PLT32    0000000000000000 hello - 4</span>
+<span class="go">000000000013  000c00000002 R_X86_64_PC32     0000000000000000 global_variable - 4</span>
+<span class="go">000000000018  000d00000004 R_X86_64_PLT32    0000000000000000 puts - 4</span>
+
+<span class="go">Relocation section &#39;.rela.eh_frame&#39; at offset 0x2c0 contains 1 entry:</span>
+<span class="go">  Offset          Info           Type           Sym. Value    Sym. Name + Addend</span>
+<span class="go">000000000020  000200000002 R_X86_64_PC32     0000000000000000 .text + 0</span>
+</code></pre></div>
+
+
+<p>The first relocation entry at offset 0x13 (the global variable reference) corresponds to the offset in the program at which the linker must fixup with the correct offset once the object files have been merged into an executable.</p>
+<p>To see what the linker produces, we'll disassemble the final executable which contains merged code from both source object files:</p>
+<div class="highlight"><pre><span></span><code><span class="x">$ objdump -M intel -d hello</span>
+
+<span class="mh">000000000000068a</span> <span class="p">&lt;</span><span class="nf">main</span><span class="p">&gt;:</span>
+<span class="x"> 68a:   55                      push   rbp</span>
+<span class="x"> 68b:   48 89 e5                mov    rbp,rsp</span>
+<span class="x"> 68e:   48 8d 3d cf 00 00 00    lea    rdi,[rip+0xcf]        # 764 &lt;_IO_stdin_used+0x4&gt;</span>
+<span class="x"> 695:   e8 13 00 00 00          call   6ad &lt;hello&gt;</span>
+<span class="x"> 69a:   48 8d 3d 6f 09 20 00    lea    rdi,[rip+0x20096f]        # 201010 &lt;global_variable&gt;</span>
+<span class="x"> 6a1:   e8 aa fe ff ff          call   550 &lt;puts@plt&gt;</span>
+<span class="x"> 6a6:   b8 00 00 00 00          mov    eax,0x0</span>
+<span class="x"> 6ab:   5d                      pop    rbp</span>
+<span class="x"> 6ac:   c3                      ret    </span>
+
+<span class="mh">00000000000006ad</span> <span class="p">&lt;</span><span class="nf">hello</span><span class="p">&gt;:</span>
+<span class="x"> 6ad:   55                      push   rbp</span>
+<span class="x"> 6ae:   48 89 e5                mov    rbp,rsp</span>
+<span class="x"> 6b1:   48 83 ec 10             sub    rsp,0x10</span>
+<span class="x"> 6b5:   48 89 7d f8             mov    QWORD PTR [rbp-0x8],rdi</span>
+<span class="x"> 6b9:   48 8b 45 f8             mov    rax,QWORD PTR [rbp-0x8]</span>
+<span class="x"> 6bd:   48 89 c6                mov    rsi,rax</span>
+<span class="x"> 6c0:   48 8d 3d a3 00 00 00    lea    rdi,[rip+0xa3]        # 76a &lt;_IO_stdin_used+0xa&gt;</span>
+<span class="x"> 6c7:   b8 00 00 00 00          mov    eax,0x0</span>
+<span class="x"> 6cc:   e8 8f fe ff ff          call   560 &lt;printf@plt&gt;</span>
+<span class="x"> 6d1:   90                      nop</span>
+<span class="x"> 6d2:   c9                      leave  </span>
+<span class="x"> 6d3:   c3                      ret    </span>
+<span class="x"> 6d4:   66 2e 0f 1f 84 00 00    nop    WORD PTR cs:[rax+rax*1+0x0]</span>
+<span class="x"> 6db:   00 00 00 </span>
+<span class="x"> 6de:   66 90                   xchg   ax,ax</span>
+</code></pre></div>
+
+
+<p>Both the "main()" function and "hello()" function now exist in the .text section for the executable. Now compare the PC relative code and data accesses to that of the unlinked object files. For example, where instruction that loads <code>global_variable</code> was <code>lea    rdi,[rip+0x0]</code> prior to linking, it is now <code>lea    rdi,[rip+0x20096f]</code>. To manually verify that the PC-relative reference is correct, we will compute the following in gdb: address of the next instruction (0x6a1) + 0x20096f + load address of 'hello' binary.</p>
+<div class="highlight"><pre><span></span><code><span class="gp">dev@ubuntu:~/Documents/linking$</span> gdb hello
+<span class="go">gef➤  b main </span>
+<span class="go">Breakpoint 1 at 0x68e</span>
+<span class="go">gef➤  r</span>
+<span class="go">Starting program: /home/dev/Documents/linking/hello </span>
+<span class="go">...</span>
+<span class="go">Breakpoint 1, 0x000055555555468e in main ()</span>
+<span class="go">gef➤  info proc mappings</span>
+<span class="go">process 5180</span>
+<span class="go">Mapped address spaces:</span>
+
+<span class="go">      Start Addr           End Addr       Size     Offset objfile</span>
+<span class="go">      0x555555554000     0x555555555000     0x1000        0x0 /home/dev/Documents/linking/hello</span>
+<span class="go">      0x555555754000     0x555555755000     0x1000        0x0 /home/dev/Documents/linking/hello</span>
+<span class="go">      0x555555755000     0x555555756000     0x1000     0x1000 /home/dev/Documents/linking/hello</span>
+<span class="go">      0x7ffff79e4000     0x7ffff7bcb000   0x1e7000        0x0 /lib/x86_64-linux-gnu/libc-2.27.so</span>
+<span class="go">      0x7ffff7bcb000     0x7ffff7dcb000   0x200000   0x1e7000 /lib/x86_64-linux-gnu/libc-2.27.so</span>
+<span class="go">      0x7ffff7dcb000     0x7ffff7dcf000     0x4000   0x1e7000 /lib/x86_64-linux-gnu/libc-2.27.so</span>
+<span class="go">      0x7ffff7dcf000     0x7ffff7dd1000     0x2000   0x1eb000 /lib/x86_64-linux-gnu/libc-2.27.so</span>
+<span class="go">      0x7ffff7dd1000     0x7ffff7dd5000     0x4000        0x0 </span>
+<span class="go">      0x7ffff7dd5000     0x7ffff7dfc000    0x27000        0x0 /lib/x86_64-linux-gnu/ld-2.27.so</span>
+<span class="go">      0x7ffff7fc7000     0x7ffff7fc9000     0x2000        0x0 </span>
+<span class="go">      0x7ffff7ff8000     0x7ffff7ffb000     0x3000        0x0 [vvar]</span>
+<span class="go">      0x7ffff7ffb000     0x7ffff7ffc000     0x1000        0x0 [vdso]</span>
+<span class="go">      0x7ffff7ffc000     0x7ffff7ffd000     0x1000    0x27000 /lib/x86_64-linux-gnu/ld-2.27.so</span>
+<span class="go">      0x7ffff7ffd000     0x7ffff7ffe000     0x1000    0x28000 /lib/x86_64-linux-gnu/ld-2.27.so</span>
+<span class="go">      0x7ffff7ffe000     0x7ffff7fff000     0x1000        0x0 </span>
+<span class="go">      0x7ffffffde000     0x7ffffffff000    0x21000        0x0 [stack]</span>
+<span class="go">  0xffffffffff600000 0xffffffffff601000     0x1000        0x0 [vsyscall]</span>
+<span class="go">gef➤  x/s 0x555555554000+0x20096f+0x6a1</span>
+<span class="go">0x555555755010 &lt;global_variable&gt;:   &quot;global var&quot;</span>
+</code></pre></div>
+</div>
+		</div>
+	</body>
+</html>
